@@ -23,12 +23,14 @@
 
 #include "SolutionManager.hpp"
 #include "Albany_DiscretizationFactory.hpp"
+#include "Albany_BlockedSTKDiscretization.hpp"
 
 #include "Sacado_ParameterAccessor.hpp"
 #include "Sacado_ParameterRegistration.hpp"
 #include "Sacado_ScalarParameterLibrary.hpp"
 #include "Sacado_ScalarParameterVector.hpp"
 
+#include <Teuchos_RCPDecl.hpp>
 #include <set>
 #include "PHAL_AlbanyTraits.hpp"
 #include "PHAL_Setup.hpp"
@@ -1318,6 +1320,14 @@ Application::loadWorksetBucketInfo(PHAL::Workset& workset, const int& ws,
 #endif
   // FIXME, 6/25: This line was causing link error.  Need to figure out why.
   // workset.auxDataPtrT = stateMgr.getAuxDataT();
+
+  auto blocked_disc = Teuchos::rcp_dynamic_cast<BlockedSTKDiscretization>(disc);
+  if (!blocked_disc.is_null()) {
+    workset.blockedWsElNodeEqID.resize(blocked_disc->numBlocks());
+    for (int i=0; i<blocked_disc->numBlocks(); ++i) {
+      workset.blockedWsElNodeEqID[i] = blocked_disc->getBlock(i)->getWsElNodeEqID()[ws];
+    }
+  }
 }
 
 }  // namespace Albany

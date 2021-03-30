@@ -377,6 +377,7 @@ list (APPEND SOURCES
   evaluators/gather/PHAL_GatherCoordinateVector.cpp
   evaluators/gather/PHAL_GatherScalarNodalParameter.cpp
   evaluators/gather/PHAL_GatherSolution.cpp
+  evaluators/gather/PHAL_GatherBlockedSolution.cpp
   evaluators/interpolation/PHAL_DOFCellToSide.cpp
   evaluators/interpolation/PHAL_DOFCellToSideQP.cpp
   evaluators/interpolation/PHAL_DOFGradInterpolation.cpp
@@ -460,6 +461,8 @@ list (APPEND HEADERS
   evaluators/bc/PHAL_Neumann_Def.hpp
   evaluators/gather/PHAL_GatherAuxData.hpp
   evaluators/gather/PHAL_GatherAuxData_Def.hpp
+  evaluators/gather/PHAL_GatherBlockedSolution.hpp
+  evaluators/gather/PHAL_GatherBlockedSolution_Def.hpp
   evaluators/gather/PHAL_GatherCoordinateVector.hpp
   evaluators/gather/PHAL_GatherCoordinateVector_Def.hpp
   evaluators/gather/PHAL_GatherScalarNodalParameter.hpp

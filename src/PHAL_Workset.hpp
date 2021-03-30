@@ -146,6 +146,8 @@ struct Workset
   std::vector<PHX::index_size_type> Jacobian_deriv_dims;
   std::vector<PHX::index_size_type> Tangent_deriv_dims;
 
+  Teuchos::Array<Albany::WorksetConn>           blockedWsElNodeEqID;
+
   Albany::WorksetConn                           wsElNodeEqID;
   Teuchos::ArrayRCP<Teuchos::ArrayRCP<GO>>      wsElNodeID;
   Teuchos::ArrayRCP<Teuchos::ArrayRCP<double*>> wsCoords;

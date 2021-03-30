@@ -69,6 +69,10 @@ namespace Albany
 
     static void buildNewBlocking(const std::string &fieldorder, std::vector<std::vector<std::string>> &blocks);
 
+    int numBlocks () const { return m_blocks.size(); }
+
+    Teuchos::RCP<disc_type> getBlock (const int iblock) { return m_blocks[iblock]; }
+
     void printConnectivity() const;
     void printConnectivity(const size_t i_block) const;
 
