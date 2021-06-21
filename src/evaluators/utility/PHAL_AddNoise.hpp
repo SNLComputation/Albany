@@ -5,15 +5,19 @@
 //*****************************************************************//
 
 #ifndef PHAL_ADD_NOISE_HPP
-#define PHAL_ADD_NOISE_HPP 1
+#define PHAL_ADD_NOISE_HPP
 
-#include <memory> // std::unique_ptr
-#include <random>
+#include <Albany_Layouts.hpp>
+#include <Albany_ScalarOrdinalTypes.hpp>
 
 #include "Phalanx_config.hpp"
 #include "Phalanx_Evaluator_WithBaseImpl.hpp"
 #include "Phalanx_Evaluator_Derived.hpp"
 #include "Phalanx_MDField.hpp"
+#include <Teuchos_ParameterList.hpp>
+
+#include <memory> // std::unique_ptr
+#include <random>
 
 namespace PHAL
 {
@@ -30,6 +34,8 @@ class AddNoiseBase : public PHX::EvaluatorWithBaseImpl<Traits>,
 public:
 
   AddNoiseBase (const Teuchos::ParameterList& p);
+  AddNoiseBase (const Teuchos::ParameterList& p,
+                const Teuchos::RCP<Albany::Layouts>& dl);
 
   void postRegistrationSetup (typename Traits::SetupData d,
                               PHX::FieldManager<Traits>& fm);
@@ -39,13 +45,16 @@ public:
   void evaluateFields(typename Traits::EvalData d);
 
 private:
+  void setup(const std::string& fieldName,
+             const std::string& noisyFieldName,
+             const Teuchos::RCP<PHX::DataLayout>& layout,
+             const Teuchos::ParameterList& pdf_params);
 
   // Input:
   PHX::MDField<const ScalarT> field;
 
   // Output:
   PHX::MDField<ScalarT> noisy_field;
-  PHX::MDField<ScalarT> field_eval;
 
   enum PDFType {UNIFORM, NORMAL};
   PDFType pdf_type;
@@ -60,19 +69,20 @@ private:
   int seed;
   bool reset_seed_pre_eval;
   bool noise_free;
-
-  bool is_zero;
 };
 
 // Some shortcut names
 template<typename EvalT, typename Traits>
-using AddNoise = AddNoiseBase<EvalT,Traits,typename EvalT::ScalarT>;
+using AddNoiseST = AddNoiseBase<EvalT,Traits,typename EvalT::ScalarT>;
 
 template<typename EvalT, typename Traits>
-using AddNoiseMesh = AddNoiseBase<EvalT,Traits,typename EvalT::MeshScalarT>;
+using AddNoiseMST = AddNoiseBase<EvalT,Traits,typename EvalT::MeshScalarT>;
 
 template<typename EvalT, typename Traits>
-using AddNoiseParam = AddNoiseBase<EvalT,Traits,typename EvalT::ParamScalarT>;
+using AddNoisePST = AddNoiseBase<EvalT,Traits,typename EvalT::ParamScalarT>;
+
+template<typename EvalT, typename Traits>
+using AddNoiseRT = AddNoiseBase<EvalT,Traits,RealType>;
 } // Namespace PHAL
 
 #endif // PHAL_ADD_NOISE_HPP

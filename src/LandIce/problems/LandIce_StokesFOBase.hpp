@@ -127,9 +127,6 @@ protected:
   void constructLateralBCEvaluators (PHX::FieldManager<PHAL::AlbanyTraits>& fm0);
 
   template <typename EvalT>
-  void constructSurfaceVelocityEvaluators (PHX::FieldManager<PHAL::AlbanyTraits>& fm0);
-
-  template <typename EvalT>
   void constructSMBEvaluators (PHX::FieldManager<PHAL::AlbanyTraits>& fm0,
                                const Albany::MeshSpecsStruct& meshSpecs);
 
@@ -323,6 +320,16 @@ constructStokesFOBaseEvaluators (PHX::FieldManager<PHAL::AlbanyTraits>& fm0,
     }
   }
 
+  // For synthetic inverse problems, allow to save observations+noise
+  // NOTE: do this only for EvalT=Residual, so any instantiation of scalar type works
+  if (std::is_same<EvalT,PHAL::AlbanyTraits::Residual>::value) {
+    auto& noise_pl = params->sublist("LandIce Noise");
+    for (auto it : noise_pl) {
+      const auto& pl = it.second.getValue<Teuchos::ParameterList>(0);
+      auto ev = Teuchos::rcp(new PHAL::AddNoiseST<EvalT,PHAL::AlbanyTraits>(pl,dl));
+      fm0.template registerEvaluator<EvalT>(ev);
+    }
+  }
 }
 
 template <typename EvalT>
@@ -1404,36 +1411,6 @@ void StokesFOBase::constructLateralBCEvaluators (PHX::FieldManager<PHAL::AlbanyT
 }
 
 template <typename EvalT>
-void StokesFOBase::constructSurfaceVelocityEvaluators (PHX::FieldManager<PHAL::AlbanyTraits>& fm0)
-{
-  Albany::EvaluatorUtils<EvalT, PHAL::AlbanyTraits> evalUtils(dl);
-  Teuchos::RCP<PHX::Evaluator<PHAL::AlbanyTraits> > ev;
-  Teuchos::RCP<Teuchos::ParameterList> p;
-
-  if (!isInvalid(surfaceSideName)) {
-    auto dl_side = dl->side_layouts.at(surfaceSideName);
-
-    //--- LandIce noise (for synthetic inverse problem) ---//
-    if (params->sublist("LandIce Noise").isSublist("Observed Surface Velocity"))
-    {
-      // ---- Add noise to the measures ---- //
-      p = Teuchos::rcp(new Teuchos::ParameterList("Noisy Observed Velocity"));
-
-      //Input
-      p->set<std::string>("Field Name", "observed_surface_velocity");
-      p->set<Teuchos::RCP<PHX::DataLayout>>("Field Layout", dl_side->qp_vector);
-      p->set<Teuchos::ParameterList*>("PDF Parameters", &params->sublist("LandIce Noise").sublist("Observed Surface Velocity"));
-
-      // Output
-      p->set<std::string>("Noisy Field Name", "observed_surface_velocity_noisy");
-
-      ev = Teuchos::rcp(new PHAL::AddNoiseParam<EvalT,PHAL::AlbanyTraits> (*p));
-      fm0.template registerEvaluator<EvalT>(ev);
-    }
-  }
-}
-
-template <typename EvalT>
 void StokesFOBase::constructSMBEvaluators (PHX::FieldManager<PHAL::AlbanyTraits>& fm0,
                                            const Albany::MeshSpecsStruct& meshSpecs)
 {
@@ -1568,8 +1545,6 @@ constructStokesFOBaseResponsesEvaluators (PHX::FieldManager<PHAL::AlbanyTraits>&
   if (fieldManagerChoice == Albany::BUILD_RESPONSE_FM) {
 
     // --- SurfaceVelocity-related evaluators (if needed) --- //
-    constructSurfaceVelocityEvaluators<EvalT> (fm0);
-
     Teuchos::RCP<Teuchos::ParameterList> paramList = Teuchos::rcp(new Teuchos::ParameterList("Param List"));
 
     // Figure out if observed surface velocity RMS is scalar (if present at all)

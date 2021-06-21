@@ -4,11 +4,15 @@
 //    in the file "license.txt" in the top-level Albany directory  //
 //*****************************************************************//
 
+#include "Albany_Layouts.hpp"
 #include "Phalanx_DataLayout.hpp"
 #include "Phalanx_Print.hpp"
 
 #include "PHAL_Utilities.hpp"
+#include "PHAL_AddNoise.hpp"
 
+#include <Teuchos_ParameterList.hpp>
+#include <stdexcept>
 #include <time.h>
 #include <random>
 
@@ -19,78 +23,86 @@ namespace PHAL {
 
 //**********************************************************************
 template<typename EvalT, typename Traits, typename ScalarT>
-AddNoiseBase<EvalT, Traits, ScalarT>::AddNoiseBase (const Teuchos::ParameterList& p)
+AddNoiseBase<EvalT, Traits, ScalarT>::
+AddNoiseBase (const Teuchos::ParameterList& p)
 {
   std::string fieldName      = p.get<std::string> ("Field Name");
   std::string noisyFieldName = p.get<std::string> ("Noisy Field Name");
-
   Teuchos::RCP<PHX::DataLayout> layout = p.get<Teuchos::RCP<PHX::DataLayout>>("Field Layout");
-  noisy_field = decltype(noisy_field)(noisyFieldName, layout);
+  const auto& pdf_params = p.sublist("PDF Parameters");
+  
+  setup(fieldName,noisyFieldName,layout,pdf_params);
+}
 
-  is_zero = (fieldName == "ZERO");
-  field = decltype(field)(fieldName, layout);
-  if (is_zero) {
-    field_eval = decltype(field_eval)(fieldName, layout);
-    this->addEvaluatedField(field_eval);
+//**********************************************************************
+template<typename EvalT, typename Traits, typename ScalarT>
+AddNoiseBase<EvalT, Traits, ScalarT>::
+AddNoiseBase (const Teuchos::ParameterList& p,
+              const Teuchos::RCP<Albany::Layouts>& dl)
+{
+  std::string fieldName      = p.get<std::string> ("Field Name");
+  std::string noisyFieldName = p.get<std::string> ("Noisy Field Name");
+  const auto& pdf_params = p.sublist("PDF Parameters");
+
+  const auto& layout_str = p.get<std::string>("Field Layout");
+  using FL  = Albany::FieldLocation;
+  using FRT = Albany::FieldRankType;
+  FL  loc;
+  FRT rank;
+  
+  bool ss_field = false;
+  if (layout_str.find("Node")!=std::string::npos) {
+    loc = FL::Node;
+  } else if (layout_str.find("Cell")!=std::string::npos || 
+             layout_str.find("Side")!=std::string::npos) {
+    loc = FL::Cell;
   } else {
-    this->addDependentField(field);
+    TEUCHOS_TEST_FOR_EXCEPTION (true, std::runtime_error,
+        "Error! Cannot deduce location for field with layout '" + layout_str + "'.\n");
   }
 
-  this->addEvaluatedField(noisy_field);
-
-  Teuchos::ParameterList& pdf_params = *p.get<Teuchos::ParameterList*>("PDF Parameters");
-  std::string pdf_type_str = pdf_params.get<std::string>("Noise PDF");
-  if (pdf_type_str=="Uniform")
-  {
-    pdf_type = UNIFORM;
-
-    double a = pdf_params.get<double>("Lower Bound");
-    double b = pdf_params.get<double>("Upper Bound");
-
-    pdf_uniform.reset(new std::uniform_real_distribution<double>(a,b));
-  }
-  else if (pdf_type_str=="Normal")
-  {
-    pdf_type = NORMAL;
-
-    double mu    = pdf_params.get<double>("Mean");
-    double sigma = pdf_params.get<double>("Standard Deviation");
-
-    pdf_normal.reset(new std::normal_distribution<double>(mu,sigma));
-  }
-  else
-  {
-    TEUCHOS_TEST_FOR_EXCEPTION (true, Teuchos::Exceptions::InvalidParameter, "Error! Invalid noise p.d.f.\n");
+  if (layout_str.find("Side")!=std::string::npos) {
+    ss_field = true;
+    TEUCHOS_TEST_FOR_EXCEPTION (dl->isSideLayouts, std::runtime_error,
+        "Error! Input layouts structure is not that of a side set.\n");
   }
 
-  seed = pdf_params.get<int>("Random Seed", std::time(nullptr));
-  reset_seed_pre_eval = pdf_params.get<bool>("Reset Seed With PreEvaluate", true);
+  if (layout_str.find("Scalar")!=std::string::npos) {
+    rank = FRT::Scalar;
+  } else if (layout_str.find("Vector")!=std::string::npos) {
+    rank = FRT::Vector;
+  } else if (layout_str.find("Gradient")!=std::string::npos) {
+    rank = FRT::Gradient;
+  } else {
+    TEUCHOS_TEST_FOR_EXCEPTION (true, std::runtime_error,
+        "Error! Cannot deduce rank for field with layout '" + layout_str + "'.\n");
+  }
 
-  rel_noise = pdf_params.get<double>("Relative Noise", 0.);
-  abs_noise = pdf_params.get<double>("Absolute Noise", 0.);
+  Teuchos::RCP<PHX::DataLayout> layout;
+  if (ss_field) {
+    const auto& ss_name = p.get<std::string>("Side Set Name");
+    auto dl_side = dl->side_layouts.at(ss_name);
+    layout = Albany::get_field_layout(rank,loc,dl_side);
+  } else {
+    layout = Albany::get_field_layout(rank,loc,dl);
+  }
 
-  TEUCHOS_TEST_FOR_EXCEPTION (rel_noise<0, Teuchos::Exceptions::InvalidParameter, "Error! Relative noise should be non-negative.\n");
-  TEUCHOS_TEST_FOR_EXCEPTION (abs_noise<0, Teuchos::Exceptions::InvalidParameter, "Error! Absolute noise should be non-negative.\n");
-
-  noise_free = (rel_noise==0) && (abs_noise==0);
-
-  this->setName("AddNoiseBase"+PHX::print<EvalT>());
+  setup(fieldName, noisyFieldName,layout,pdf_params);
 }
 
 //**********************************************************************
 template<typename EvalT, typename Traits, typename ScalarT>
 void AddNoiseBase<EvalT, Traits, ScalarT>::
-postRegistrationSetup(typename Traits::SetupData d,
+postRegistrationSetup(typename Traits::SetupData /* d */,
                       PHX::FieldManager<Traits>& fm)
 {
-  if (is_zero) this->utils.setFieldData(field_eval,fm);
   this->utils.setFieldData(field,fm);
   this->utils.setFieldData(noisy_field,fm);
 }
 
 template<typename EvalT, typename Traits, typename ScalarT>
 void AddNoiseBase<EvalT, Traits, ScalarT>::
-preEvaluate(typename Traits::PreEvalData workset)
+preEvaluate(typename Traits::PreEvalData /* workset */)
 {
   // Reset the seed. E.g., each iteration of Newton should solve the system with
   // the same realization of noise.
@@ -100,19 +112,8 @@ preEvaluate(typename Traits::PreEvalData workset)
 
 //**********************************************************************
 template<typename EvalT, typename Traits, typename ScalarT>
-void AddNoiseBase<EvalT, Traits, ScalarT>::evaluateFields (typename Traits::EvalData workset)
+void AddNoiseBase<EvalT, Traits, ScalarT>::evaluateFields (typename Traits::EvalData /* workset */)
 {
-
-// Mauro: for some reason deep copy is not working when evaluation type is MP Jacobian, and the kokkos views are
-// Kokkos::Experimental::View<Sacado::Fad::DFad<Sacado::MP::Vector<Stokhos::StaticFixedStorage<int, double, 16, Kokkos::Serial> > >*******, Kokkos::Serial>::array_type,
-
-/*  if (noise_free)
-  {
-    noisy_field.deep_copy(field);
-    return;
-  }
-*/
-
   PHAL::MDFieldIterator<const ScalarT> in(field);
   PHAL::MDFieldIterator<ScalarT> out(noisy_field);
 
@@ -122,20 +123,68 @@ void AddNoiseBase<EvalT, Traits, ScalarT>::evaluateFields (typename Traits::Eval
     return;
   }
 
-
-  switch (pdf_type)
-  {
+  switch (pdf_type) {
     case UNIFORM:
       for (; !in.done(); ++in, ++out)
         *out = abs_noise*(*pdf_uniform)(generator) + (*in)*(1+rel_noise*(*pdf_uniform)(generator));
+      break;
 
     case NORMAL:
       for (; !in.done(); ++in, ++out)
         *out = abs_noise*(*pdf_normal)(generator) + (*in)*(1+rel_noise*(*pdf_normal)(generator));
+      break;
 
     default:
-      TEUCHOS_TEST_FOR_EXCEPTION(true, std::logic_error, "Error! [PHAL::AddNoiseBase] This exception should never throw.\n");
+      TEUCHOS_TEST_FOR_EXCEPTION(true, std::logic_error,
+          "Error! [PHAL::AddNoiseBase] This exception should never throw.\n");
   }
+}
+
+template<typename EvalT, typename Traits, typename ScalarT>
+void AddNoiseBase<EvalT, Traits, ScalarT>::
+setup(const std::string& fieldName,
+      const std::string& noisyFieldName,
+      const Teuchos::RCP<PHX::DataLayout>& layout,
+      const Teuchos::ParameterList& pdf_params)
+{
+  noisy_field = decltype(noisy_field)(noisyFieldName, layout);
+
+  field = decltype(field)(fieldName, layout);
+  this->addDependentField(field);
+
+  this->addEvaluatedField(noisy_field);
+
+  std::string pdf_type_str = pdf_params.get<std::string>("Noise PDF");
+  if (pdf_type_str=="Uniform") {
+    pdf_type = UNIFORM;
+
+    double a = pdf_params.get<double>("Lower Bound");
+    double b = pdf_params.get<double>("Upper Bound");
+
+    pdf_uniform.reset(new std::uniform_real_distribution<double>(a,b));
+  } else if (pdf_type_str=="Normal") {
+    pdf_type = NORMAL;
+
+    double mu    = pdf_params.get<double>("Mean");
+    double sigma = pdf_params.get<double>("Standard Deviation");
+
+    pdf_normal.reset(new std::normal_distribution<double>(mu,sigma));
+  } else {
+    TEUCHOS_TEST_FOR_EXCEPTION (true, Teuchos::Exceptions::InvalidParameter, "Error! Invalid noise p.d.f.\n");
+  }
+
+  seed = pdf_params.isParameter("Random Seed") ? pdf_params.get<int>("Random Seed") : std::time(nullptr);
+  reset_seed_pre_eval = pdf_params.isParameter("Reset Seed With PreEvaluate") ? pdf_params.get<bool>("Reset Seed With PreEvaluate") : true;
+
+  rel_noise = pdf_params.isParameter("Relative Noise") ? pdf_params.get<double>("Relative Noise") :  0.;
+  abs_noise = pdf_params.isParameter("Absolute Noise") ? pdf_params.get<double>("Absolute Noise") :  0.;
+
+  TEUCHOS_TEST_FOR_EXCEPTION (rel_noise<0, Teuchos::Exceptions::InvalidParameter, "Error! Relative noise should be non-negative.\n");
+  TEUCHOS_TEST_FOR_EXCEPTION (abs_noise<0, Teuchos::Exceptions::InvalidParameter, "Error! Absolute noise should be non-negative.\n");
+
+  noise_free = (rel_noise==0) && (abs_noise==0);
+
+  this->setName("AddNoiseBase(" + noisyFieldName + ")" + PHX::print<EvalT>());
 }
 
 } // Namespace PHAL
