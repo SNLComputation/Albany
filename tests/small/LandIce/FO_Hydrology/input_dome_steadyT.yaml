@@ -12,6 +12,7 @@ ANONYMOUS:
     Solution Method: Steady
     Name: LandIce Stokes FO Hydrology
     Basal Side Name: basalside
+    Surface Side Name: upperside
     Parameters:
       Number Of Parameters: 1
       Parameter 0:
@@ -61,6 +62,16 @@ ANONYMOUS:
       Flow Rate Type: Uniform
     Body Force:
       Type: FO INTERP SURF GRAD
+    LandIce Noise:
+      Create surface velocity measures:
+        Field Name: Velocity_upperside
+        Noisy Field Name: observed_velocity_upperside
+        PDF Parameters:
+          Noise PDF: Normal
+          Mean: 0.0
+          Standard Deviation: 1.0
+          Relative Noise: 1.0
+          Absolute Noise: 0.0
     LandIce Field Norm:
       sliding_velocity_basalside:
         Regularization Type: Given Value
@@ -117,7 +128,7 @@ ANONYMOUS:
         Field Type: Node Scalar
         Field Origin: Mesh
     Side Set Discretizations:
-      Side Sets: [basalside]
+      Side Sets: [basalside, upperside]
       basalside:
         Number Of Time Derivatives: 0
         Cubature Degree: 4
@@ -173,6 +184,18 @@ ANONYMOUS:
           Field 10:
             Field Name: water_pressure
             Field Type: Node Scalar
+            Field Usage: Output
+      upperside:
+        Number Of Time Derivatives: 0
+        Cubature Degree: 4
+        Workset Size: 100
+        Method: SideSetSTK
+        Exodus Output File Name: results/dome_surface.exo
+        Required Fields Info:
+          Number Of Fields: 1
+          Field 0:
+            Field Name: observed_velocity
+            Field Type: Node Vector
             Field Usage: Output
   Regression For Response 0:
     Absolute Tolerance: 1.0e-04
